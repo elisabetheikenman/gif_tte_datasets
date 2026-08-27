@@ -1,7 +1,9 @@
 # New TTE datasets — what we can use, and what it costs
 
-Scope: the three sources you sent, plus a pass over `TTE_datasets_appendix.md` so
-nothing in it is silently dropped. Checked 27 Aug 2026.
+Two passes: the three sources sent first (Quebec, Rome, San Francisco), then a
+full sweep of `TTE_datasets_appendix.md`. Checked 27 Aug 2026.
+
+**Already in the table, skipped throughout:** Omsk, Abakan, Chengdu, Harbin, Porto.
 
 ## What "usable" means here
 
@@ -17,184 +19,299 @@ The gold contract is the Harbin format with the Omsk file naming (both in
 `Coordinates` / `OSMids` / `Timestamps` are equal-length Python-literal lists, one
 entry per GPS fix, and `Total_time = Timestamps[-1] - Timestamps[0]`.
 
-So a source is usable for **R1 (route-aware)** only if it gives us, per trip, a
-sequence of road segments with timestamps — either already matched, or raw GPS
-dense enough that we can map-match it ourselves. Everything that only gives
-origin, destination and a duration is **OD-only**: still usable, but for a
-different task, and not a drop-in for the current table.
+A source is **R1 (route-aware)** only if it gives a sequence of road segments with
+timestamps — already matched, or raw GPS dense enough to match ourselves.
+A source that gives only origin, destination and duration is **OD-only**: usable,
+but for a different task.
+
+## Verdict summary
+
+| # | Dataset | Mode | Verdict | Notebook |
+|---|---|---|---|---|
+| 1 | **eVED** (Ann Arbor) | R1 | **Best of the new ones.** ~1 Hz, on-road coordinates, explicit trips. Verified in hand | `prepare_dataset_eved.ipynb` |
+| 2 | **Quebec City** | R1 | **Use.** Already map-matched. No geometry exists | `prepare_dataset_quebec.ipynb` |
+| 3 | **San Francisco** Cabspotting | R1 | **Use.** Occupancy flag = observed trips; ~60 s sampling | `prepare_dataset_san_francisco.ipynb` |
+| 4 | **Rome taxi** | R1 | **Use.** 7 s sampling, but trips must be inferred | `prepare_dataset_rome.ipynb` |
+| 5 | **GeoLife** (Beijing) | R1 | **Use.** Only open source with transport-mode labels | `prepare_dataset_geolife.ipynb` |
+| 6 | **pNEUMA** (Athens) | R1 | **Use as a calibration set, never as a city** | `prepare_dataset_pneuma.ipynb` |
+| 7 | **SUMO** LuST / InTAS / MoST | R1, simulated | **Use as a diagnostic bench.** Only source of paired counterfactuals | `prepare_dataset_sumo.ipynb` |
+| 8 | **Citi Bike** + 3 sister systems | OD | **Use, clearly labelled OD.** Huge, 13–16 years | `prepare_dataset_citibike.ipynb` |
+| 9 | T-Drive | R1 | **Decide first** — probably our existing Beijing column | — |
+| 10 | Chicago TNP / Taxi, NYC TLC | OD | Census-tract centroids, 15-min rounding. Different task | — |
+| 11 | NGSIM | R1, micro | Would work; pNEUMA fills the same role with real lat/lon | — |
+| 12 | LargeST / PeMS / METR-LA / UTD19 | R4 | Label synthesised by our own composition rule | — |
+| 13 | Helsinki matrix, Valhalla/r5r | OD, engine | Routing-engine output, not measurement | — |
+| 14 | Shenzhen SciDB, IEEE 7e1g-hw96 | R1 | Licence unstated / thin deposit | — |
+| 15 | DiDi GAIA, Grab-Posisi, Quebec-full | R1 | **Send letters** | — |
+| 16 | NPMRDS, Uber Movement, Chicago & Austin scooters, Aalborg, Q-Traffic, Astana-synthetic, MobilityBench, HuggingFace | — | Dead ends | — |
 
 ---
 
-## 1. The three sources you sent
+## 1. What I verified by hand this pass
 
-### 1.1 Quebec City — `github.com/melmasri/traveltimeCLT` ✅ USE
+Several appendix items were marked *[не верифицировано]*. These are now settled —
+and two of them change the plan.
 
-**Verified by downloading and reading the data.**
+### eVED clones, and it is better than the appendix says
 
-- `data/trips.rda` in the repo (7.3 MB), identical `tripset` in `melmasri/traveltimeHMM`.
-- **4 914 trips / 322 799 link traversals / 13 235 links**, 28 Apr – 16 May 2014.
-- Columns: `tripID`, `linkID`, `timeBin`, `speed`, `duration_secs`,
-  `distance_meters`, `entry_time`. Source: anonymised *Mon Trajet* smartphone GPS
-  (Brisk Synergies); package licence **GPL-3**, no separate data licence.
-- **Already map-matched.** Each row is one link of one trip with entry time and
-  traversal duration; `entry_time[k+1] ≈ entry_time[k] + duration[k]`
-  (corr(trip span, sum of link durations) = **0.991**), so the links really are
-  contiguous. This is the R1 signal with zero matching work on our side.
-- **What is missing: geometry.** `linkID` is an anonymised integer — no
-  coordinates, no OSM id, no shapefile. The network was never released, so
-  `road_network_unique_osmids_quebec.geojson` **cannot be produced**, and anything
-  in our pipeline that consumes coordinates (map crops, spatial embeddings,
-  position-based GNN features) cannot run on Quebec.
-- Also: the sample is almost entirely weekday rush hour (114 `Weekendday` and 112
-  `EveningNight` rows out of 322 799), and the paper used 19 967 trips against the
-  4 914 released.
-- **Action:** none beyond running the notebook — `git clone` and go. Write to
-  Elmasri (`elmasri.m@use.startmail.com`) if we want the full 19 967 trips and/or
-  the link geometry; that letter is cheap and the upside is a fully usable city.
-- **Notebook:** `prepare_dataset_quebec.ipynb` (runs, verified).
+`git clone https://Datarepo@bitbucket.org/datarepo/eved_dataset.git` **works**
+(1.3 GB). `data/eVED.zip` holds **54 weekly CSVs, 5.8 GB uncompressed**, 35
+columns. Measured on the real files:
 
-### 1.2 Rome taxi — `ieee-dataport.org/open-access/crawdad-romataxi` ✅ USE, with work
+* **Sampling is ~1 Hz** — median 0.6–0.9 s between fixes. That is denser than
+  everything else on this list except pNEUMA, and matches Grab-Posisi, which needs
+  a letter and a wait.
+* `Matchted Latitude[deg]` / `Matched Longitude[deg]` (the typo is in the data)
+  are **non-null for 100 %** of the records checked, and sit ~2·10⁻⁵° off the raw
+  fix — i.e. the calibration really did put every point on a road.
+* Trips are explicit: `(VehId, Trip)`. Median duration ~370–420 s, 101+ points each.
+* Ann Arbor bbox, lat 42.22–42.32, lon −83.80…−83.67.
 
-**The IEEE DataPort page is blocked by this session's egress proxy, so the record
-itself was not re-read here.** Format and size confirmed from the CRAWDAD
-converter source (`github.com/julianofischer/roma-taxi-converter`) and secondary
-sources; download requires a free IEEE account and has to be done by hand.
+**Correction to the appendix:** eVED does *not* give an edge-id sequence. It gives
+snapped coordinates plus road attributes (speed limit with direction, elevation,
+gradient, intersection / bus-stop / crossing flags). The OSM segment ids still
+have to be produced — but from on-road coordinates, so matching is easy.
 
-- ~320 taxis, **~21.8 M fixes**, 1 Feb – 2 Mar 2014, ~7 s nominal sampling,
-  ~374 MB (1.5 GB raw). No licence stated on the record — cite Amici et al.,
-  *MoWNeT 2014*, and ship a loader, not a copy of the data.
-- One file, `taxi_february.txt`, `;`-separated,
-  `id;2014-02-01 00:00:00.739166+01;POINT(lat lon)` — **latitude first**.
-- **What has to be built:** trip segmentation (there is no occupancy flag and no
-  navigation session, so trips are cut on time gaps and standstills) and map
-  matching against OSM. Both are in the notebook.
-- **What we lose:** trip boundaries are *inferred*, so `Total_time` means "time
-  driving between two stops", not "duration of a requested route". A cruising taxi
-  is also not a private car. And OSM 2026 is not Rome 2014.
-- **Why bother:** Rome is the city RED (PVLDB 2025) uses, so it buys direct
-  comparability with a current VLDB baseline, plus an irregular-layout European city.
-- **Notebook:** `prepare_dataset_rome.ipynb` (logic verified against a synthetic
-  network; the OSM download and the real archive must be run on your machine).
+**Time base, which is documented nowhere:** `DayNum` is **constant within a trip** —
+it is the trip start, in days since **2017-11-01**, 1-based. `Timestamp(ms)`
+restarts at 0 each trip. So
+`epoch = epoch(2017-11-01) + (DayNum−1)·86400 + Timestamp(ms)/1000`.
+Verified across two weekly files: reconstructed range 2017-11-01 00:04 →
+2018-11-10 12:10, exactly the collection window.
 
-### 1.3 San Francisco Cabspotting — `ieee-dataport.org/open-access/crawdad-epflmobility` ✅ USE, cheap
+Licence is still unstated (VED itself is Apache-2.0). Ship the notebook, not the
+derived files.
 
-**Same caveat: the DataPort page is blocked here;** format confirmed from
-secondary sources. Free IEEE account, DOI `10.15783/C7J010`, attribution licence.
+### The bikeshare S3 buckets are listable after all
 
-- **536 cabs, ~11.2 M fixes**, 17 May – 10 Jun 2008, ~90 MB.
-- `_cabs.txt` + one `new_<cab>.txt` per cab; each line is
-  `latitude longitude occupancy epoch`, **newest fix first**.
-- **The occupancy flag is the reason to prefer this over Rome**: a maximal run of
-  `occupancy == 1` is a real hired trip with a real start and end, so trip
-  boundaries are observed rather than guessed.
-- **The catch is the sampling rate.** The appendix (and the DataPort record) says
-  "< 10 s"; what the files actually contain is closer to **one fix per minute**.
-  At 60 s a cab covers several hundred metres, so the matched edge sequence is an
-  inference between fixes. The notebook prints the real interval quantiles so we
-  can decide with numbers rather than with the record's claim.
-- Plus: 2008-era GPS on a 2026 OSM network, downtown one-way grid.
-- **Why bother:** first North American city in the table, and it is a day of work.
-- **Notebook:** `prepare_dataset_san_francisco.ipynb` (logic verified against a
-  synthetic network).
+The appendix could not enumerate them. Plain `curl` to `s3.amazonaws.com` works
+from here and returns the XML index:
+
+| system | objects | total | span |
+|---|---|---|---|
+| **Citi Bike** `tripdata` | 173 | **30.76 GB** | 2013 → 2026-07 |
+| **Capital Bikeshare** | 111 | 1.67 GB | **2010** → 2026-07 |
+| **Divvy** | 94 | 1.85 GB | 2013 (quarterly) → 2026-07 |
+| **Bay Wheels** | 103 | 0.96 GB | 2017 → 2026-07 |
+
+Schema confirmed by downloading a real month:
+`ride_id, rideable_type, started_at, ended_at, start_station_name, start_station_id,
+end_station_name, end_station_id, start_lat, start_lng, end_lat, end_lng, member_casual`
+— real coordinates in the record, timestamps to the millisecond. The pre-2020
+files use the older `starttime` / `start station latitude` names; the notebook
+handles both.
+
+### The SUMO route is exact, and SUMO now installs from PyPI
+
+`pip install eclipse-sumo sumolib` brings the **binaries** (1.27.1 here), so no
+system package is needed. `LuSTScenario` (449 MB, MIT) and `InTAS` (978 MB,
+GPL-3.0) both clone. `lust.net.xml` carries `projParameter` (UTM 32), so
+`sumolib` converts every edge shape to lon/lat.
+
+The important part: run SUMO with `--vehroute-output.exit-times true` and it
+writes, per vehicle, the **edge sequence and the exit time of every edge**:
+
+```xml
+<vehicle id="v3" depart="9.00" arrival="117.00">
+  <route edges="-31500#0 --31540#1 …" exitTimes="27.00 39.00 …"/>
+</vehicle>
+```
+
+That is our format with no matching, no segmentation and no inference at all. I
+ran 300 vehicles on the real LuST network and converted them end to end.
+
+**Teleports.** SUMO teleports a stuck vehicle and records the jump as if it were
+part of the route. I confirmed all three vehicles SUMO logged as teleported are
+caught by checking that consecutive edges are actually connected in the network —
+that check is in the notebook, and `--time-to-teleport -1` should be used anyway.
+
+### Blocked from this session (so still on the "check by hand" list)
+
+`ieee-dataport.org`, `huggingface.co`, `zenodo.org`, `kaggle.com`,
+`overpass-api.de`, `download.microsoft.com`, `open-traffic.epfl.ch`,
+`data.transportation.gov`, `d37ci6vzurychx.cloudfront.net`, and github.com's web
+UI (git clone and `raw.githubusercontent.com` work fine). So the **NYC TLC
+2009–2016 schema question** — whether those delisted parquet files really carry
+`pickup_longitude` — is still open, and GeoLife / pNEUMA / NGSIM had to be
+described from their documentation rather than from the bytes.
 
 ---
 
-## 2. The rest of the appendix — verdicts
+## 2. The new datasets in detail
 
-Statuses below are the appendix's own (2 Aug 2026) unless marked *(checked here)*.
-I did not re-verify each link: several relevant hosts (`ieee-dataport.org`,
-`huggingface.co`, `overpass-api.de`, `impactcybertrust.org`) are blocked by this
-session's egress policy.
+### 2.1 eVED (Ann Arbor) — R1, the strongest addition
 
-### Route-aware, worth adding after the three above
+383 private cars, Nov 2017 – Nov 2018, ~22 M records, ~1 Hz, already on-road.
+Beyond travel time it carries fuel rate, MAF, HV battery current/SOC/voltage,
+elevation, gradient and directional speed limits — the only public source where
+**time and energy can be predicted jointly**.
 
-| Dataset | Verdict | What it costs |
-|---|---|---|
-| **GeoLife 1.3** (Microsoft) | **Use.** Direct download, 17 621 trajectories, 1–5 s sampling, 2007–2012, **transport-mode labels** — the only open source for cross-mode TTE transfer. | Same pipeline as Rome (segment + match), Beijing network. ~3 days. |
-| **T-Drive** (Beijing, 10 357 taxis) | **Check first.** The appendix argues our existing `Beijing` column probably *is* T-Drive. If so, adding it is double-counting; if not, our Beijing row needs a source. | Half a day of checking, then either drop or document. |
-| **Porto** `kraina/porto_taxi` (HF, CC BY 4.0) | **Use as a reproducibility anchor**, ~400 k trajectories, 15 s polylines. Standardised version of UCI #339. | Trivial: polylines + 15 s cadence → same matcher. ~2 days. |
-| **eVED** (Ann Arbor) | **Use if the mirror works.** Already Valhalla-matched, >99 % of records on-road, 22 M rows, real routes + energy. The GitHub in the paper is 404; only an unverified Bitbucket clone remains, and the licence is unstated. | 1–2 weeks, plus a licence question. |
-| **Shenzhen** `10.57760/sciencedb.j00133.00519` | **Do not plan on it.** Licence unstated, and the deposit is a 3.1 MB curated extract, not the 8.6 M trajectories. | Ten minutes to check rights, then decide. |
+Against it: one mid-sized American city, 383 cars, twelve months, largely the same
+people driving the same commutes. Signal density is excellent, diversity is not.
+This is not "a new city" in the sense the table means.
 
-### OD-only — a different task, not a drop-in
+### 2.2 GeoLife 1.3 (Beijing) — R1, the only multimodal one
 
-Chicago TNP + Taxi (**≈521 M + 218 M trips**, coordinates are census-tract
-centroids, time rounded to 15 min), NYC TLC (zone ids since 2015; the 2009–2016
-coordinate-era parquet files are delisted but still served), the four bikeshare
-systems (Citi Bike / Divvy / Capital Bikeshare / Bay Wheels), Helsinki Travel Time
-Matrix (a *routing-engine output*, not a measurement), Minneapolis scooters.
-All are real measured durations with unobserved routes. They are the right
-material for scaling / fairness / distribution-shift / calibration questions and
-the wrong material for our current R1 table. **Note the redistribution ban** on
-Divvy and Capital Bikeshare — loader and preprocessing script only, never a
-repackaged benchmark file.
+17 621 trajectories, 182 users, Apr 2007 – Aug 2012, 91 % logged every 1–5 s,
+298.7 MB, direct download, no licence stated. **69 users labelled their
+trajectories with the mode of transport**, which is the only way to ask whether a
+TTE model trained on cars transfers to buses.
 
-### Needs a letter, not code
+Against it: the mode mix is nothing like a taxi fleet — walk and bus dominate,
+`car`/`taxi` are a minority; five years of trajectories against a 2026 OSM
+network; mixed loggers and mixed sampling. And if our Beijing column is T-Drive,
+GeoLife is a *different* Beijing — name which is which, never merge them.
 
-**DiDi GAIA** (Xi'an, Chengdu — application form), **Grab-Posisi** (84 000
-trajectories at **1 Hz**, the highest rate in any public set, Singapore + Jakarta —
-email `grab.posisi@grabtaxi.com`), **Quebec full set** (see 1.1). Cheap to send,
-weeks to wait; send them now if we want them at all.
+### 2.3 pNEUMA (Athens) — R1, but a calibration set
 
-### Not usable for this task
+10 drones over 1.3 km² of central Athens, ~100 intersections, 4 days in Oct 2018,
+6 half-hour windows 08:00–11:00, **25 fps**, ~500 000 trajectories, CC BY-NC 4.0.
+Format is a ragged wide CSV: 4 vehicle fields then repeating groups of
+`lat, lon, speed, lon_acc, lat_acc, time`.
 
-- **NPMRDS / RITIS** — structurally unavailable to a non-US academic group.
-- **Uber Movement** — service dead (404); the one claimed raw mirror has no
-  manifest, no licence and zero downloads.
-- **Chicago / Austin scooters** — start and end centroids are byte-identical in
-  the raw records; there is no OD signal to recover.
-- **Aalborg** (MM-Path), **Q-Traffic**, canonical **Shenzhen / Hangzhou** taxi —
-  no public release.
-- **LargeST / PeMS / METR-LA / UTD19** — detector archives. Any TTE label is
-  *synthesised by our own composition rule*, so we would be scoring a model against
-  our own assumption. Freeway-only except UTD19. Fine as an R4 experiment, not as
-  a new city.
-- **LuST / MoST / InTAS / MATSim / CBLab** — simulation. Paired counterfactuals
-  are their unique value; the labels are car-following outputs. Diagnostic bench,
-  never a headline benchmark, never mixed into training without a domain flag.
-- **pNEUMA / NGSIM** — ~1 km², hours. Calibration set for the composition rule,
-  not a TTE benchmark.
-- **Astana synthetic congestion benchmark** — speeds are simulated, not measured.
-- **MobilityBench** — an LLM route-planning benchmark despite the name.
-- **HuggingFace** — no ground-transport trip-level TTE dataset exists there.
-- **Transit / maritime / aviation** (Dutch bus, Astana AVL, Swiss IstDaten, Warsaw
-  ZTM, Delhi AVL, AIS, OpenSky) — real ETA labels, different problem. Only relevant
-  if we take one of the transit tasks.
+This is the only open source where the true continuous path of every vehicle
+through a dense urban network is known. That makes it the right instrument for the
+noise-floor question — how much of a segment's travel time is predictable and how
+much is luck with the light phase — and for validating a per-edge composition
+rule instead of postulating it.
+
+**It must not be listed as a city.** 1.3 km², three morning hours. A track starts
+when a vehicle enters the drone footprint and ends when it leaves, so `Total_time`
+is a segment time, not a journey. Non-commercial licence. Rush hour only.
+
+### 2.4 SUMO scenarios — R1, simulated, and the only counterfactuals
+
+LuST (MIT), InTAS (GPL-3.0), MoST (GPLv3), the DLR set including TAPASCologne
+(EPL-2.0). Conversion is exact (see above).
+
+The unique value is **paired worlds**: re-run the same demand with an edge closed,
+demand at ±20 %, or a different signal plan, and every vehicle has a matched
+before/after. No real dataset can produce that. The notebook writes
+`counterfactual_pairs_<city>.csv` when a second run is configured.
+
+The label is a car-following model's output. LuST and InTAS are calibrated against
+aggregate counts, which constrains flows and says nothing about individual trip
+realism. Diagnostic bench only, and never pooled with real labels without a domain
+flag.
+
+### 2.5 Citi Bike and the three sister systems — OD, huge, noisy
+
+Verified above. ~30.8 GB, 2013 → July 2026 for Citi Bike; Capital Bikeshare goes
+back to **2010**. Duration is measured; the route is never observed.
+
+The notebook writes the gold format so the same loader works, but each trip has
+exactly **two** points, and it drops a `MODE_<city>.json` flag file next to the
+data so nothing downstream mistakes these for routes. The label folds together
+route choice, rider fitness, e-bike vs pedal and mid-ride detours, so the
+irreducible variance is large — which is precisely what makes it a fair test of
+**calibration** rather than point accuracy.
+
+Legal: Divvy and Capital Bikeshare forbid redistributing the data as a stand-alone
+dataset (CaBi adds non-commercial); Citi Bike is permissive for analysis. Publish
+the loader, not the files. Operators already removed every ride under 60 s, so the
+left tail of the label distribution is truncated.
+
+---
+
+## 3. Everything else in the appendix, and why there is no notebook
+
+* **T-Drive** — 10 357 Beijing taxis, Feb 2008. The appendix argues our existing
+  Beijing column probably *is* T-Drive. Settle that before adding anything: if it
+  is, a notebook would be double-counting; if it is not, the Beijing row needs a
+  documented source either way. Half a day of checking.
+* **Chicago TNP (≈521 M) + Chicago Taxi (≈218 M) + NYC TLC** — the largest public
+  corpora of measured durations anywhere, and the right material for scaling,
+  fairness and distribution-shift work. But coordinates are census-tract or
+  community-area centroids and times are rounded to 15 minutes, so as an R1 source
+  they are a ceiling, not a dataset. The NYC TLC coordinate era (2009–2016) is the
+  one thing that could change this and its schema is still unverified.
+* **NGSIM** — CC BY-SA 3.0, the only freely redistributable micro dataset, 0.1 s,
+  with `Section_ID` / `Int_ID` on the arterial corridors, so an edge list falls out
+  without map matching. It would work. pNEUMA covers the same role with real
+  lat/lon, a denser network and 500 k trajectories, so it is the better first
+  choice; NGSIM is the fallback if the NC licence on pNEUMA is a problem.
+* **LargeST / PeMS / METR-LA / PEMS-BAY / UTD19** — detector archives. Any TTE
+  label is synthesised by our own composition rule, so we would be scoring a model
+  against our own assumption; freeway-only except UTD19; no end-to-end ground
+  truth exists in them at all. Legitimate as an R4 experiment, not as a city.
+* **Helsinki Travel Time Matrix, Valhalla / r5r** — routing-engine output. Useful
+  as a pretraining corpus or a topology probe; calling it TTE would be calling
+  engine distillation TTE.
+* **Shenzhen SciDB** (licence unstated, and the deposit is a 3.1 MB extract, not
+  the 8.6 M trajectories), **IEEE 10.21227/7e1g-hw96** (thin metadata) — ten
+  minutes each to check, not worth planning around.
+* **Minneapolis scooters** — CC0 and real street-segment ids, but a few hundred
+  thousand records a year and the vehicle is a scooter. Chicago and Austin are
+  traps: their start and end centroids are byte-identical in the raw records.
+* **DiDi GAIA / Grab-Posisi / Quebec-full** — letters, not code. Grab-Posisi is
+  84 000 trajectories at 1 Hz plus a fifth geography; eVED now gives us 1 Hz
+  without the wait, which lowers the urgency but not the value.
+* **Dead ends**: NPMRDS (structurally unavailable to a non-US group), Uber Movement
+  (service dead, the one claimed mirror has no manifest, no licence, zero
+  downloads), Aalborg and Q-Traffic (no public release), Astana synthetic
+  benchmark (simulated speeds, not measurements), MobilityBench (an LLM
+  route-planning benchmark despite the name), HuggingFace (no ground-transport
+  trip-level TTE dataset exists there at all).
+* **Transit / maritime / aviation** (Dutch bus, Astana AVL, Swiss IstDaten, Warsaw
+  ZTM, Delhi AVL, NOAA AIS, MARIS-Forecast, OpenSky) — real ETA labels for a
+  different problem. Astana is the only CIS analogue of our setup and is CC BY 4.0
+  on Zenodo with 1–5 s raw GPS, so it is the one to reach for if the transit task
+  is ever taken up.
+* **Yandex `urban-traffic-benchmark`** — MIT, metropolis-scale, but traffic-state
+  forecasting, not TTE. Fits R4, not the table.
 
 ### The appendix's own item #1 still stands
 
 `gctte.online` is NXDOMAIN and there is no mirror of Abakan/Omsk anywhere. Whatever
-we do with new cities, the **re-release of Abakan/Omsk with a DOI** is the item
-with the highest ratio of citations to effort, and it is the one dataset only we
-can produce.
+we add, the **re-release of Abakan/Omsk with a DOI** remains the item with the
+highest ratio of citations to effort, and the only dataset only we can produce.
 
 ---
 
-## 3. Suggested order
+## 4. Suggested order
 
-1. **Quebec** — done, notebook runs, no download friction.
-2. **San Francisco** — one login, one day, first North American city.
-3. **Rome** — one login, two days, buys the RED comparison.
-4. Send the **Grab-Posisi**, **DiDi GAIA** and **Quebec-full** letters in the same
-   sitting; they cost an hour and the waiting runs in parallel with everything else.
-5. **GeoLife** next if we want the multimodal angle; **Porto** if we want a
-   reproducibility anchor.
-6. Decide the **Beijing / T-Drive** question before publishing the table either way.
+1. **eVED** — notebook runs, data verified in hand, 1 Hz, energy channels. Best
+   value per day of work on this list.
+2. **Quebec** — no download friction, already matched.
+3. **San Francisco**, then **Rome** — one IEEE login each; SF buys a North American
+   city, Rome buys the RED (PVLDB'25) comparison.
+4. **GeoLife** — the multimodal angle, and a second Beijing to disambiguate the
+   first one.
+5. Send the **Grab-Posisi**, **DiDi GAIA** and **Quebec-full** letters in one
+   sitting — an hour of work, and the waiting overlaps everything above.
+6. **SUMO / LuST** counterfactuals — the only route to interventional TTE, and now
+   a `pip install` away.
+7. **pNEUMA** — as the noise-floor and composition-rule calibration section, not as
+   a city.
+8. **Citi Bike** — when the calibration / OD line of work actually starts.
+9. Settle the **Beijing / T-Drive** question before the table is published either
+   way.
 
-## 4. Notes on running the notebooks
+## 5. Notes on running the notebooks
 
-`prepare_dataset_rome.ipynb` and `prepare_dataset_san_francisco.ipynb` download the
-road network from OSM via `osmnx` and cache it as GraphML. Both the IEEE archives
-and the Overpass API are unreachable from the session this was written in, so those
-two notebooks were validated end-to-end against a synthetic road network and
-synthetic traces in the exact raw formats — parsing, segmentation, filtering,
-matching, writing and the format check all pass. Run them against the real archives
-on a machine with normal network access. `prepare_dataset_quebec.ipynb` was run on
-the real data and produced 4 898 trips over 13 233 links.
+Every notebook writes the three gold files and ends with a `validate_gold` cell
+that re-reads them and checks the contract (column names, equal list lengths,
+`literal_eval` parses, `Total_time` consistency, and that every segment referenced
+by a trip exists in the edge list and the geojson).
 
-Map matching is a small HMM (emission = snap distance, transition = graph
-adjacency, restricted to same / 1-hop / 2-hop). The adjacency term is what makes
-the direction of travel identifiable on two-way streets — plain nearest-edge
-snapping picks the reverse edge roughly half the time. Each notebook reports
-per-trip connectivity and drops trips below `MIN_CONNECTIVITY`; spot-check a
-handful of matched routes on a map before training on any of it.
+Verified by running:
+
+| notebook | how it was tested |
+|---|---|
+| `quebec` | **real data**, produced 4 898 trips over 13 233 links |
+| `eved` | **real data** (2 weekly files, 413 889 fixes, 1 024 trips); synthetic network stands in for the blocked Overpass |
+| `sumo` | **real LuST network + a real SUMO run**, 270 trips converted |
+| `citibike` | **real data** (a real month, 108 766 rides); synthetic network stands in for Overpass |
+| `rome`, `san_francisco`, `geolife`, `pneuma` | synthetic traces in the exact raw formats + synthetic network — parsing, segmentation, filtering, matching, writing and the contract check all pass |
+
+The four raw archives that need a manual download (IEEE DataPort ×2, Microsoft
+GeoLife, EPFL pNEUMA) are all on hosts blocked from this session, so those
+notebooks must be run where the network allows it.
+
+Map matching, where it happens, is a small HMM: emission is snap distance,
+transitions are restricted to same edge / 1-hop / 2-hop graph adjacency. The
+adjacency term is what makes the direction of travel identifiable on two-way
+streets — plain nearest-edge snapping picks the reverse edge roughly half the
+time (measured: 0.29 connectivity vs 1.0 for the HMM on a test grid). Each
+notebook reports per-trip connectivity and drops trips below `MIN_CONNECTIVITY`.
+Spot-check a handful of matched routes on a map before training on any of it.
