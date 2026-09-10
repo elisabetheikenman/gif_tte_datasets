@@ -150,9 +150,17 @@ on a 100 m street grid, the share of the true route that map matching recovers:
 
 The axis is **distance, not time**: 150 m between fixes recovers ~81 % of the
 route whether that gap took 15 s at 10 m/s or 120 s at 1.2 m/s — the measured
-numbers are identical. A slow, congested fare sampled once a minute matches fine;
-a fast one does not. (My first fix gated on elapsed seconds and rejected all
-20 000 SF trips, matchable ones included. It now gates on metres.)
+numbers are identical.
+
+**That does not make it a usable filter.** At a roughly fixed cadence,
+distance = speed x cadence, so gating on distance is gating on speed: at 60 s a
+150 m threshold means "keep only trips averaging under 9 km/h", which on a
+plausible urban speed mix keeps ~4 % of trips at a mean of 7.6 km/h against
+22 km/h unfiltered. Filtering for matchability and filtering for congestion are
+the same operation, and the second one wrecks the label. So the gate ships as
+`None`; the per-trip `median_step_m` and `observed_share` go to
+`trip_quality_<city>.csv` and any cut is made downstream, in view of what it does
+to the travel-time distribution.
 
 Downtown San Francisco is a regular grid, the worst case: many routes between two
 points have exactly the same length, so the shortest path is a coin flip. The
