@@ -139,21 +139,28 @@ in the edges the vehicle had to cross, so the emitted route is genuinely connect
 The more interesting result is what the fix exposes. Measured against ground truth
 on a 100 m street grid, the share of the true route that map matching recovers:
 
-| gap between fixes | ~distance | true route recovered |
-|---|---|---|
-| 5-7 s | 50-70 m | 100 % |
-| 15 s | 150 m | ~88 % |
-| 20 s | 200 m | ~58 % |
-| 30 s | 300 m | ~54 % |
-| 60 s | 600 m | **~31 %** |
+| distance between fixes | true route recovered |
+|---|---|
+| 50 m | 100 % |
+| 90 m | ~99 % |
+| 150 m | ~81 % |
+| 200 m | ~58 % |
+| 300 m | ~55 % |
+| 600 m | **~32 %** |
 
-Downtown San Francisco is a regular grid, which is the worst case: many routes
-between two points have exactly the same length, so the shortest path is a coin
-flip. At Cabspotting's real cadence roughly two thirds of any reconstructed route
-is invented. The notebook therefore rejects trips coarser than `MAX_MEDIAN_GAP_S`
-(20 s) rather than stitching them, and prints what share of the emitted points are
-observed rather than inferred. **If little survives that filter, the honest use of
-Cabspotting is OD mode**, like Citi Bike — not a route-aware city.
+The axis is **distance, not time**: 150 m between fixes recovers ~81 % of the
+route whether that gap took 15 s at 10 m/s or 120 s at 1.2 m/s — the measured
+numbers are identical. A slow, congested fare sampled once a minute matches fine;
+a fast one does not. (My first fix gated on elapsed seconds and rejected all
+20 000 SF trips, matchable ones included. It now gates on metres.)
+
+Downtown San Francisco is a regular grid, the worst case: many routes between two
+points have exactly the same length, so the shortest path is a coin flip. The
+notebook prints, before matching, what share of trips survive at each threshold
+and the route accuracy that buys, then reports what share of emitted points are
+observed rather than inferred. **If little survives, the honest use of Cabspotting
+is OD mode** — section 6 of the notebook writes it — where the occupancy flag
+still makes the *duration* real ground truth even though the path is not.
 
 Rome at 7 s is unaffected; eVED and pNEUMA are far denser still.
 
