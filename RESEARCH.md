@@ -30,7 +30,7 @@ but for a different task.
 |---|---|---|---|---|
 | 1 | **eVED** (Ann Arbor) | R1 | **Best of the new ones.** ~1 Hz, on-road coordinates, explicit trips. Verified in hand | `prepare_dataset_eved.ipynb` |
 | 2 | **Quebec City** | R1 | **Use.** Already map-matched. No geometry exists | `prepare_dataset_quebec.ipynb` |
-| 3 | **San Francisco** Cabspotting | R1 | **Use.** Occupancy flag = observed trips; ~60 s sampling | `prepare_dataset_san_francisco.ipynb` |
+| 3 | **San Francisco** Cabspotting | R1 / OD | **Conditional.** Occupancy flag = observed trips, but at ~60 s sampling the route is mostly inferred — see 1.4 | `prepare_dataset_san_francisco.ipynb` |
 | 4 | **Rome taxi** | R1 | **Use.** 7 s sampling, but trips must be inferred | `prepare_dataset_rome.ipynb` |
 | 5 | **GeoLife** (Beijing) | R1 | **Use.** Only open source with transport-mode labels | `prepare_dataset_geolife.ipynb` |
 | 6 | **pNEUMA** (Athens) | R1 | **Use as a calibration set, never as a city** | `prepare_dataset_pneuma.ipynb` |
@@ -124,6 +124,38 @@ ran 300 vehicles on the real LuST network and converted them end to end.
 part of the route. I confirmed all three vehicles SUMO logged as teleported are
 caught by checking that consecutive edges are actually connected in the network —
 that check is in the notebook, and `--time-to-teleport -1` should be used anyway.
+
+### Cabspotting's sampling rate decides whether it is R1 at all
+
+Running the San Francisco notebook rejected almost every trip. The immediate cause
+was a bug of mine — the matcher allowed a vehicle to cross up to two edges between
+fixes while the quality check demanded that consecutive matched segments share a
+node. Those two are consistent at 7 s sampling and incompatible at 60 s, so the
+check threw away trips for having the sampling rate they have. Fixed: the
+transition model is now Newson & Krumm (network distance vs straight-line
+distance, no assumption about how far apart the fixes are), and the matcher fills
+in the edges the vehicle had to cross, so the emitted route is genuinely connected.
+
+The more interesting result is what the fix exposes. Measured against ground truth
+on a 100 m street grid, the share of the true route that map matching recovers:
+
+| gap between fixes | ~distance | true route recovered |
+|---|---|---|
+| 5-7 s | 50-70 m | 100 % |
+| 15 s | 150 m | ~88 % |
+| 20 s | 200 m | ~58 % |
+| 30 s | 300 m | ~54 % |
+| 60 s | 600 m | **~31 %** |
+
+Downtown San Francisco is a regular grid, which is the worst case: many routes
+between two points have exactly the same length, so the shortest path is a coin
+flip. At Cabspotting's real cadence roughly two thirds of any reconstructed route
+is invented. The notebook therefore rejects trips coarser than `MAX_MEDIAN_GAP_S`
+(20 s) rather than stitching them, and prints what share of the emitted points are
+observed rather than inferred. **If little survives that filter, the honest use of
+Cabspotting is OD mode**, like Citi Bike — not a route-aware city.
+
+Rome at 7 s is unaffected; eVED and pNEUMA are far denser still.
 
 ### Blocked from this session (so still on the "check by hand" list)
 
