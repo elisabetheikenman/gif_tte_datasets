@@ -1,0 +1,6 @@
+# extracted from datasets.zip by EDA.ipynb
+datasets/
+# per-city summaries and figures written by EDA.ipynb
+eda_out/
+.ipynb_checkpoints/
+__pycache__/
