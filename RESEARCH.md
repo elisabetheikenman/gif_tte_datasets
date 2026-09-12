@@ -31,7 +31,7 @@ but for a different task.
 | 1 | **eVED** (Ann Arbor) | R1 | **Best of the new ones.** ~1 Hz, on-road coordinates, explicit trips. Verified in hand | `prepare_dataset_eved.ipynb` |
 | 2 | **Quebec City** | R1 | **Use.** Already map-matched. No geometry exists | `prepare_dataset_quebec.ipynb` |
 | 3 | **San Francisco** Cabspotting | R1 / OD | **Conditional.** Occupancy flag = observed trips, but at ~60 s sampling the route is mostly inferred — see 1.4 | `prepare_dataset_san_francisco.ipynb` |
-| 4 | **Rome taxi** | R1 | **Use.** 7 s sampling, but trips must be inferred | `prepare_dataset_rome.ipynb` |
+| 4 | **Rome taxi** | R1 | **Use.** 7 s sampling, but both trip boundaries *and* whether a passenger was aboard must be inferred | `prepare_dataset_rome.ipynb` |
 | 5 | **GeoLife** (Beijing) | R1 | **Use.** Only open source with transport-mode labels | `prepare_dataset_geolife.ipynb` |
 | 6 | **pNEUMA** (Athens) | R1 | **Use as a calibration set, never as a city** | `prepare_dataset_pneuma.ipynb` |
 | 7 | **SUMO** LuST / InTAS / MoST | R1, simulated | **Use as a diagnostic bench.** Only source of paired counterfactuals | `prepare_dataset_sumo.ipynb` |
